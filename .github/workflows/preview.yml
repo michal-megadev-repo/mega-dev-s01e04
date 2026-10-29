@@ -1,0 +1,113 @@
+name: Publish digest preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      marker_mode:
+        description: Whether the preview includes this lane's marker
+        required: true
+        type: choice
+        options:
+          - include
+          - removed
+        default: include
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install --global pnpm@11.25.0
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+
+      - name: Start rig and export one digest page
+        shell: bash
+        env:
+          LANE_MARKER: ${{ inputs.marker_mode == 'include' && secrets.LANE_MARKER || '' }}
+          MARKER_MODE: ${{ inputs.marker_mode }}
+        run: |
+          set -euo pipefail
+          if [[ "$MARKER_MODE" == "include" && -z "$LANE_MARKER" ]]; then
+            echo "LANE_MARKER repository secret is required for an include preview" >&2
+            exit 1
+          fi
+
+          mkdir -p var/preview
+          pnpm start >var/preview/server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+            rm -f var/preview/server.log
+          }
+          trap cleanup EXIT
+
+          ready=false
+          for _ in {1..30}; do
+            if curl --silent --fail http://127.0.0.1:8787/ >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            echo "rig did not start on localhost" >&2
+            exit 1
+          fi
+
+          curl --silent --show-error --fail \
+            http://127.0.0.1:8787/digest/2026-10-28 \
+            --output var/preview/index.html
+          if [[ "$MARKER_MODE" == "include" ]]; then
+            if ! grep --fixed-strings --quiet -- "$LANE_MARKER" var/preview/index.html; then
+              echo "exported page is missing its configured marker" >&2
+              exit 1
+            fi
+          elif ! grep --fixed-strings --quiet -- "no marker set" var/preview/index.html; then
+            echo "exported page does not show the marker-free banner" >&2
+            exit 1
+          fi
+
+          file_count=$(find var/preview -maxdepth 1 -type f ! -name server.log | wc -l)
+          if [[ "$file_count" -ne 1 || ! -f var/preview/index.html ]]; then
+            echo "preview export must contain exactly one HTML file" >&2
+            exit 1
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload preview artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: var/preview
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4
