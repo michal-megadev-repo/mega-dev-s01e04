@@ -26,11 +26,11 @@ export function DigestPage({ digest }: { digest: NightDigest }) {
                 return (
                   <tr class={warn ? 'warn' : undefined}>
                     <td>{row.job}</td>
-                    <td>{row.owner ?? missing}</td>
+                    <td>{row.owner == null || row.owner.trim() === '' ? missing : row.owner}</td>
                     <td>{row.runs}</td>
                     <td>{row.retries}</td>
                     <td>{row.lastStatus}</td>
-                    <td>{row.lastError ?? missing}</td>
+                    <td>{row.lastError || missing}</td>
                     <td>{row.firstAt}</td>
                     <td>{row.lastAt}</td>
                   </tr>

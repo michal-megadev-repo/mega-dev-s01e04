@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import type { Hono } from 'hono';
 import type { RigConfig } from '../config.js';
 import { lane } from '../lane.js';
 import { Layout } from '../views/layout.js';
