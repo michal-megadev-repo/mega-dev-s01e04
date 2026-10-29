@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readNight } from '../src/digest/reader.js';
 
@@ -16,7 +16,13 @@ function log(contents: string): string {
 }
 
 afterEach(() => {
-  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  const temporaryRoot = resolve(tmpdir());
+  for (const directory of directories.splice(0)) {
+    const target = resolve(directory);
+    expect(dirname(target)).toBe(temporaryRoot);
+    expect(basename(target).startsWith('rig-digest-')).toBe(true);
+    rmSync(target, { recursive: true, force: true });
+  }
 });
 
 describe('readNight', () => {
